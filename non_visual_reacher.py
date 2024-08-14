@@ -34,7 +34,6 @@ class FrankaPandaEnv(gym.Env):
         self.model.site_pos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'spherical_site')] = [ np.random.uniform(0.5, 0.8),
                                                                                                           np.random.uniform(0, 0.3),
                                                                                                           np.random.uniform(0.5, 0.8)]
-        print(self.model.site_pos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'spherical_site')])
         mujoco.mj_forward(self.model, self.data)
         self._sync_view()
         return self._get_obs()
@@ -66,31 +65,35 @@ class FrankaPandaEnv(gym.Env):
 
         # Calculate the distance
         distance = np.linalg.norm(target - robotic_arm_pointer)
-        return -1 * distance * 10
+        return -1 * distance * 10 - (10 if self._is_out_of_bounds(robotic_arm_pointer) else 0) # Extra penalty for going out of bounds
     
     def _is_done(self):
         robotic_arm_pointer = self.data.site_xpos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'end_effector')]
         target = self.data.site_xpos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'spherical_site')]
         distance = np.linalg.norm(target - robotic_arm_pointer)
-        print(robotic_arm_pointer)
-        return distance < 0.05 or np.any(robotic_arm_pointer > 1)
+        return distance < 0.05 or self._is_out_of_bounds(robotic_arm_pointer)
+    def _is_out_of_bounds(self, robotic_arm_pointer) -> bool:
+        return not ( (0.1 < robotic_arm_pointer[2]  < 0.9) and\
+                     (-0.4 < robotic_arm_pointer[1] < 0.4) and\
+                     (0.1 < robotic_arm_pointer[0] < 0.9)) 
     
 
 def test_env():
     env = FrankaPandaEnv(render=True)
     obs = env.reset()
-    step = 0
+
     while True:
         # pass
         action = env.action_space.sample()
         obs, reward, done, info = env.step(action)
-        step += 1
+        time.sleep(0.2)
         if done:
             print(obs, reward, done)
             _ = env.reset()
-            time.sleep(0.2)
+            
         
 def run_manual():
+    
     env = FrankaPandaEnv(render=True, manual_mode=True)
     obs = env.reset()
     while env.view.is_running():
