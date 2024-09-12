@@ -14,10 +14,9 @@ from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
 import time
 # import multiprocessing as mp
 from non_visual_reacher import FrankaPandaEnv, run_manual
-from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, WrappedEnv
 import argparse
 import shutil
-
+import numpy as np
 
 config = {
     'conv': [
@@ -214,7 +213,7 @@ def run_training(args):
     print(f'\nFinished in {end_time - task_start_time}s')
 
 def run_policy(args):
-    env = FrankaPandaEnv(render=True)
+    env = FrankaPandaEnv(render=args.render_env)
     env = WrappedEnv(env, start_step= args.start_step, 
                      start_episode=args.start_episode, episode_max_steps=1000)
     
@@ -257,14 +256,25 @@ def run_policy(args):
     args.net_params = config
     agent = SACRADAgent(vars(args))
     obs = env.reset()
-    while True:
-        action = agent.sample_actions(obs, deterministic=True)
-        next_obs, reward, done, info = env.step(action)
-        obs = next_obs
-        if done:
-            obs = env.reset()
-            time.sleep(2)
-            print("Episode Done")
+    returns = []
+    for _ in range(100):
+        done = False
+        rewards = []
+        while not done:
+            action = agent.sample_actions(obs, deterministic=True)
+            next_obs, reward, done, info = env.step(action)
+            rewards.append(reward)
+            obs = next_obs
+            if done:
+                obs = env.reset()
+                time.sleep(2)
+                print("Episode Done")
+        returns.append(sum(rewards))
+
+    
+    np.savetxt("results/sim_episodic_returns.txt", returns)
+        
+    env.close()
             
     
 

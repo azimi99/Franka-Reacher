@@ -7,6 +7,7 @@ from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, WrappedEnv
 from jsac.helpers.logger import Logger
 from jsac.envs.rl_chemist.env import RLChemistEnv
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
+import imageio
 
 np.set_printoptions(precision=3, linewidth=10000, suppress=True)
 import os
@@ -304,14 +305,25 @@ def run_policy(args):
     args.net_params = config
     agent = SACRADAgent(vars(args))
     obs = env.reset()
-    while True:
-        action = agent.sample_actions(obs, deterministic=True)
-        next_obs, reward, done, info = env.step(action)
-        obs = next_obs
-        if done:
-            obs = env.reset()
-            time.sleep(2)
-            print("Episode Done")
+    returns = []
+    for _ in range(100):
+        done = False
+        rewards = []
+        while not done:
+            action = agent.sample_actions(obs, deterministic=True)
+            next_obs, reward, done, info = env.step(action)
+            obs = next_obs
+            if done:
+                obs = env.reset()
+                time.sleep(2)
+                print("Episode Done")
+            rewards.append(reward)
+        returns.append(sum(rewards))
+    np.savetxt("results/real_episodic_returns.txt", returns)
+
+    env.close()
+    
+            
 
 
 

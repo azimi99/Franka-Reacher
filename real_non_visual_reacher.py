@@ -216,7 +216,6 @@ class FrankaPandaEnv(gym.Env):
         self.data.qvel[:7] = obs_robot['joint_vels'].copy()
 
         obs = self._get_obs(self.data.qpos, self.data.qvel)
-        print(obs.shape)
 
         self.time_steps = 0
 
@@ -379,7 +378,6 @@ class FrankaPandaEnv(gym.Env):
         
         # construct the state
         obs = self._get_obs(self.data.qpos, self.data.qvel)
-        print(obs.shape)
         prop = obs.copy()
         done = 0
         info = {}

@@ -7,7 +7,6 @@ import time
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
-import glfw
 import argparse
 
 ARM_VEL_LIMITS = np.array([2.61799, 2.61799, 2.61799, 2.61799, 3.14159, 3.14159, 3.14159, 0])
@@ -34,19 +33,21 @@ class FrankaPandaEnv(gym.Env):
         self.data.qpos = default_kf.qpos.copy()
         self.data.ctrl = default_kf.ctrl.copy()
         ## Change Target Position
-        self.model.site_pos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'spherical_site')] = [ np.random.uniform(0.7, 0.8),
-                                                                                                          np.random.uniform(-0.2, 0.2),
-                                                                                                          np.random.uniform(0.2, 0.6)]
+        # self.model.site_pos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'spherical_site')] = [ np.random.uniform(0.7, 0.8),
+        #                                                                                                   np.random.uniform(-0.2, 0.2),
+        #                                                                                                   np.random.uniform(0.2, 0.6)]
+
+        self.model.site_pos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'spherical_site')]  = [0.72667744, 0.16379048, 0.20914678] # Keep target stationary for now
         mujoco.mj_forward(self.model, self.data)
         self._sync_view()
         return self._get_obs()
     
     def step(self, action):
         action = np.clip(action, -1.0, 1.0) 
-        # print(action.shape)
+
         action = (((action + 1) * 0.5) * ARM_VEL_LIMITS * 2) - ARM_VEL_LIMITS
         action = action * self._dt
-        action *= 0.4 #np.clip(self._compute_distance(), 0, 0.4) # Scale down the action
+        action *= 0.4
         
         new_qpos = self._last_qpos[:8] + action
         clipped_new_qpos = np.clip(new_qpos, self._arm_ctrlrange_min, self._arm_ctrlrange_max)
@@ -66,6 +67,7 @@ class FrankaPandaEnv(gym.Env):
         return mujoco.viewer.launch_passive(self.model, self.data, show_left_ui= not disable_panels, show_right_ui=not disable_panels)
     
     def _sync_view(self):
+        
         if self.view and self.view.is_running():
             with self.view.lock():
                 self.view.sync()
@@ -73,6 +75,8 @@ class FrankaPandaEnv(gym.Env):
     def _get_obs(self):
         robotic_arm_pointer = self.data.site_xpos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'end_effector')]
         target = self.data.site_xpos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'spherical_site')]
+        print(self.data.qpos)
+        print("target: ", target)
         return np.concatenate([target, target - robotic_arm_pointer, self.data.qpos, self.data.qvel])
     
     def _compute_reward(self, action):
@@ -99,6 +103,63 @@ class FrankaPandaEnv(gym.Env):
         target = self.data.site_xpos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'spherical_site')]
         return np.linalg.norm(target - robotic_arm_pointer)
     
+    def _get_tf_mat(self, i, dh):
+        a = dh[i][0]
+        d = dh[i][1]
+        alpha = dh[i][2]
+        theta = dh[i][3]
+        q = theta
+
+        return np.array([[np.cos(q), -np.sin(q), 0, a],
+                        [np.sin(q) * np.cos(alpha), np.cos(q) * np.cos(alpha), -np.sin(alpha), -np.sin(alpha) * d],
+                        [np.sin(q) * np.sin(alpha), np.cos(q) * np.sin(alpha), np.cos(alpha), np.cos(alpha) * d],
+                        [0, 0, 0, 1]])
+
+    def _get_end_effector_pos(self, joint_angles):
+
+        dh_params = [[0, 0.333, 0, joint_angles[0]],
+                 [0, 0, -np.pi/2, joint_angles[1]],
+                 [0, 0.316, np.pi/2, joint_angles[2]],
+                 [0.0825, 0, np.pi/2, joint_angles[3]],
+                 [-0.0825, 0.384, -np.pi/2, joint_angles[4]],
+                 [0, 0, np.pi/2, joint_angles[5]],
+                 [0.088, 0, np.pi/2, joint_angles[6]],
+                 [0, 0.107, 0, 0],
+                 [0, 0, 0, -np.pi/4]]
+
+        T = np.eye(4)
+        for i in range(7 + 2):
+            T = T @ self._get_tf_mat(i, dh_params)
+
+        final_T = T @ self._get_end_effector_transformation()
+        return final_T[:3, 3] # xyz position of end effector
+    
+    def _quaternion_to_rotation_matrix(self, quat):
+        """
+        Converts a quaternion [qx, qy, qz, qw] to a 3x3 rotation matrix.
+        """
+        qx, qy, qz, qw = quat
+        R = np.array([
+            [1 - 2*qy**2 - 2*qz**2, 2*qx*qy - 2*qz*qw, 2*qx*qz + 2*qy*qw],
+            [2*qx*qy + 2*qz*qw, 1 - 2*qx**2 - 2*qz**2, 2*qy*qz - 2*qx*qw],
+            [2*qx*qz - 2*qy*qw, 2*qy*qz + 2*qx*qw, 1 - 2*qx**2 - 2*qy**2]
+        ])
+        return R
+    
+    def _get_end_effector_transformation(self):
+        # End-effector position and quaternion from XML
+        position = np.array([0, 0, 0.1034])  # Position from XML
+        quat = [0.707, 0, 0.707, 0]          # Quaternion from XML
+        rotation_matrix = self._quaternion_to_rotation_matrix(quat)
+
+        # Construct the 4x4 transformation matrix
+        T_end_effector = np.eye(4)
+        T_end_effector[:3, :3] = rotation_matrix
+        T_end_effector[:3, 3] = position
+        return T_end_effector
+    def close_view(self):
+        self.view.close()
+        
 
 def test_env():
     env = FrankaPandaEnv(render=True)
