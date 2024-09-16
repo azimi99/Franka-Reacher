@@ -216,8 +216,8 @@
                       
                       <site name="end_effector" pos="0 0 0.1034" quat="0.707 0 0.707 0" size='0.005'/>
                       
-                      <camera name="camera_1" pos="0.04 0 0" quat="0 0.707 0.707 0" />
-                      <camera name="camera_2" pos="-0.04 0 0" quat="0 0.707 0.707 0" />
+                      <!-- <camera name="camera_1" pos="0.04 0 0" quat="0 0.707 0.707 0" />
+                      <camera name="camera_2" pos="-0.04 0 0" quat="0 0.707 0.707 0" /> -->
 
                       <geom mesh="hand_c" class="collision"/>
                       <body name="left_finger" pos="0 0 0.0584">

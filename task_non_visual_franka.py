@@ -10,7 +10,7 @@ from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, WrappedEnv
 from jsac.helpers.logger import Logger
 from jsac.envs.rl_chemist.env import RLChemistEnv
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
-
+from utils import combine_images, image_render
 
 import time
 # import multiprocessing as mp
@@ -18,6 +18,7 @@ from non_visual_reacher import FrankaPandaEnv, run_manual
 import argparse
 import shutil
 import numpy as np
+import cv2
 
 config = {
     'conv': [
@@ -94,13 +95,16 @@ def parse_args():
     parser.add_argument('--buffer_load_path', default='', type=str) # ./buffers/
 
     # render
-    parser.add_argument('--render_env', default=False, type=bool)
+    parser.add_argument('--render_interactive', default=False, type=bool)
+    parser.add_argument('--render', default=False, type=bool)
+    parser.add_argument('--record', default=False, type=bool)
+
     args = parser.parse_args()
     return args
 
 
 def run_training(args):
-    env = FrankaPandaEnv(render=args.render_env)
+    env = FrankaPandaEnv(render=args.render_interactive)
     env = WrappedEnv(env, start_step= args.start_step, 
                      start_episode=args.start_episode, episode_max_steps=1000)
     
@@ -214,7 +218,7 @@ def run_training(args):
     print(f'\nFinished in {end_time - task_start_time}s')
 
 def run_policy(args):
-    env = FrankaPandaEnv(render=args.render_env)
+    env = FrankaPandaEnv(render=args.render_interactive)
     env = WrappedEnv(env, start_step= args.start_step, 
                      start_episode=args.start_episode, episode_max_steps=1000)
     
@@ -258,12 +262,42 @@ def run_policy(args):
     agent = SACRADAgent(vars(args))
     obs = env.reset()
     returns = []
-    for _ in range(100):
+    cap = cv2.VideoCapture(0)
+    # _, frame = cap.read()
+    image = image_render(env)
+
+    if image is not None:
+        image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)  # Convert from RGB to BGR for OpenCV
+        # _, frame = cap.read()
+
+    # final_image = combine_images(image_bgr, frame)
+    height, width, _ = image_bgr.shape
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Codec for .mp4 files
+    video_writer = cv2.VideoWriter("results/sim/run.mp4", fourcc, fps=30, frameSize=(width, height))
+    if not cap.isOpened():
+        return
+    for _ in range(1):
         done = False
         rewards = []
         while not done:
             action = agent.sample_actions(obs, deterministic=True)
             next_obs, reward, done, info = env.step(action)
+            image = image_render(env)
+
+            if image is not None:
+                image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)  # Convert from RGB to BGR for OpenCV
+                video_writer.write(image_bgr)
+                cv2.imshow('Env Visuals', image_bgr)
+            # _, frame = cap.read()
+
+            # final_image = combine_images(image_bgr, frame)
+            # video_writer.write(final_image)
+            
+            # cv2.imshow('Final Image', final_image)
+
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
             rewards.append(reward)
             obs = next_obs
             if done:
@@ -272,11 +306,13 @@ def run_policy(args):
                 print("Episode Done")
         returns.append(sum(rewards))
 
-    
     np.savetxt("results/sim_episodic_returns.txt", returns)
-        
+    cv2.destroyAllWindows()
+    video_writer.release()
+    cap.release()
     env.close()
-            
+    print("Policy Run Complete")
+    exit(0)     
     
 
 if __name__=="__main__":

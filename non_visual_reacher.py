@@ -27,6 +27,7 @@ class FrankaPandaEnv(gym.Env):
         self._arm_ctrlrange_min = self.model.actuator_ctrlrange[:, 0]
         self._arm_ctrlrange_max = self.model.actuator_ctrlrange[:, 1] 
         self.view = self._render_env(not manual_mode) if render else None
+        self.renderer = mujoco.Renderer(self.model, height=300, width=300)
         
     def reset(self):
         default_kf = self.model.keyframe("default")
@@ -65,18 +66,32 @@ class FrankaPandaEnv(gym.Env):
 
     def _render_env(self, disable_panels=True):
         return mujoco.viewer.launch_passive(self.model, self.data, show_left_ui= not disable_panels, show_right_ui=not disable_panels)
+    def _get_viewer_camera_z_axis(self):
+        # Get the camera parameters
+        cam_lookat = np.array(self.view.cam.lookat)  # The point the camera is looking at
+        cam_distance = self.view.cam.distance  # Distance from the camera to the lookat point
+        cam_azimuth = np.deg2rad(self.view.cam.azimuth)  # Convert azimuth from degrees to radians
+        cam_elevation = np.deg2rad(self.view.cam.elevation)  # Convert elevation from degrees to radians
+
+        # Calculate the camera position using spherical coordinates
+        cam_x = cam_lookat[0] + cam_distance * np.cos(cam_elevation) * np.sin(cam_azimuth)
+        cam_y = cam_lookat[1] + cam_distance * np.cos(cam_elevation) * np.cos(cam_azimuth)
+        cam_z = cam_lookat[2] + cam_distance * np.sin(cam_elevation)
+
+        # Return the camera position as a NumPy array
+        return cam_lookat - np.array([cam_x, cam_y, cam_z]) 
     
     def _sync_view(self):
         
         if self.view and self.view.is_running():
             with self.view.lock():
                 self.view.sync()
-    
+                print(self._get_viewer_camera_z_axis())
+
+
     def _get_obs(self):
         robotic_arm_pointer = self.data.site_xpos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'end_effector')]
         target = self.data.site_xpos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'spherical_site')]
-        print(self.data.qpos)
-        print("target: ", target)
         return np.concatenate([target, target - robotic_arm_pointer, self.data.qpos, self.data.qvel])
     
     def _compute_reward(self, action):

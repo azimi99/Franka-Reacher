@@ -120,6 +120,8 @@ class FrankaPandaEnv(gym.Env):
 
         self.view = self._render_env() if render else None
 
+        self.renderer = mujoco.Renderer(self.model, height=400, width=500)
+
     def _render_env(self, disable_panels=True):
         '''
             This function renders a 1 of 1 replica mujoco environment

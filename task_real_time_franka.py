@@ -7,18 +7,19 @@ from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, WrappedEnv
 from jsac.helpers.logger import Logger
 from jsac.envs.rl_chemist.env import RLChemistEnv
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
-import imageio
+
+import cv2
+
 
 np.set_printoptions(precision=3, linewidth=10000, suppress=True)
 import os
-
 import json
 import time
-
-
 import tkinter as tk
 from tkinter import ttk
 import argparse
+
+from utils import image_render, combine_images
 config = {
     'conv': [
         # in_channel, out_channel, kernel_size, stride
@@ -95,8 +96,13 @@ def parse_args():
     parser.add_argument('--buffer_load_path', default='', type=str) # ./buffers/
 
     # render
-    parser.add_argument('--render_env', default=False, type=bool)
+    parser.add_argument('--render_interactive', default=False, type=bool)
+    parser.add_argument('--render', default=False, type=bool)
+    parser.add_argument('--record', default=False, type=bool)
+
+    # Run manual UI
     parser.add_argument('--run_manual', default=False, type=bool)
+
     args = parser.parse_args()
     return args
 
@@ -215,8 +221,8 @@ def run_manual(args):
     for i in range(8):
         action[i] = 0.0
 
-    env = FrankaPandaEnv(render=args.render_env)
-    obs = env.reset()
+    env = FrankaPandaEnv(render=args.render_interactive)
+    _ = env.reset()
     time.sleep(0.2)
 
     gui_process = Process(target=start_gui, args=(action_sm.name, reset_sm.name))
@@ -262,7 +268,7 @@ def run_manual(args):
     action_sm.close()
 
 def run_policy(args):
-    env = FrankaPandaEnv(render=args.render_env)
+    env = FrankaPandaEnv(render=args.render_interactive)
     env = WrappedEnv(env, start_step= args.start_step, 
                      start_episode=args.start_episode, episode_max_steps=1000)
     
@@ -306,12 +312,40 @@ def run_policy(args):
     agent = SACRADAgent(vars(args))
     obs = env.reset()
     returns = []
-    for _ in range(100):
+
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        return
+    _, frame = cap.read()
+    image = image_render(env)
+
+    if image is not None:
+        image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)  # Convert from RGB to BGR for OpenCV
+
+    final_image = combine_images(image_bgr, frame)
+    height, width, _ = final_image.shape
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Codec for .mp4 files
+    video_writer = cv2.VideoWriter("results/sim2real/run.mp4", fourcc, fps=30, frameSize=(width, height))
+
+    for _ in range(1):
         done = False
         rewards = []
         while not done:
             action = agent.sample_actions(obs, deterministic=True)
             next_obs, reward, done, info = env.step(action)
+
+            image = image_render(env)
+
+            if image is not None:
+                image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)  # Convert from RGB to BGR for OpenCV
+
+            _, frame = cap.read()
+            final_image = combine_images(image_bgr, frame)
+            video_writer.write(final_image)
+            cv2.imshow('Sim2Real Visualization', final_image)
+
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
             obs = next_obs
             if done:
                 obs = env.reset()
@@ -320,8 +354,11 @@ def run_policy(args):
             rewards.append(reward)
         returns.append(sum(rewards))
     np.savetxt("results/real_episodic_returns.txt", returns)
-
+    cv2.destroyAllWindows()
+    video_writer.release()
+    cap.release()
     env.close()
+    print("Policy run complete")
     
             
 
