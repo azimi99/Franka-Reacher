@@ -50,7 +50,7 @@ class FrankaPandaEnv(gym.Env):
         self.max_episode_duration = episode_length # in seconds
         signal.signal(signal.SIGINT, self.exit_handler)
         # config_file = os.path.join(os.path.dirname(__file__), os.pardir, 'reacher.yaml')
-        self.configs = configure('/home/fahim/project/JSAC/jsac/envs/visual_franka_dense_reacher/reacher.yaml')
+        self.configs = configure('./reacher.yaml')
         self.conf_exp = self.configs['experiment']
         self.conf_env = self.configs['environment']
         rospy.init_node("franka_robot_gym")
@@ -322,11 +322,11 @@ class FrankaPandaEnv(gym.Env):
         
         # limit joint action
         action = action.reshape(-1)
-        action = np.clip(action, -1.0, 1.0) 
+        action = np.clip(action, -0.3, 0.3) 
 
         action = (((action + 1) * 0.5) * ARM_VEL_LIMITS * 2) - ARM_VEL_LIMITS
         action = action * self.dt
-        action *= 0.4
+        # action *= 0.4
         # convert joint velocities to pose velocities
         pose_action = np.matmul(self.get_robot_jacobian(), action[:7])
 

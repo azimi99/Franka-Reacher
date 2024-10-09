@@ -11,11 +11,11 @@ import argparse
 
 ARM_VEL_LIMITS = np.array([2.61799, 2.61799, 2.61799, 2.61799, 3.14159, 3.14159, 3.14159, 0])
 class FrankaPandaEnv(gym.Env):
-    def __init__(self, render=False, manual_mode = False, frame_skip=20):
+    def __init__(self, render=False, manual_mode = False, frame_skip=20, model_path="env.xml"):
         super(FrankaPandaEnv, self).__init__()
         
         # Load the Franka Panda model from MuJoCo Menagerie
-        model_path = "env.xml"
+
         self.model = mujoco.MjModel.from_xml_path(model_path)
         self.data = mujoco.MjData(self.model)
         self._frame_skip = frame_skip
@@ -48,7 +48,7 @@ class FrankaPandaEnv(gym.Env):
 
         action = (((action + 1) * 0.5) * ARM_VEL_LIMITS * 2) - ARM_VEL_LIMITS
         action = action * self._dt
-        action *= 0.4
+        # action *= 0.4 ## NO NEED FOR SCALING
         
         new_qpos = self._last_qpos[:8] + action
         clipped_new_qpos = np.clip(new_qpos, self._arm_ctrlrange_min, self._arm_ctrlrange_max)

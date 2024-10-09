@@ -49,7 +49,7 @@ def parse_args():
     parser.add_argument('--image_history', default=3, type=int)
 
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=1_000_000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=1000000, type=int)
     
     # train
     parser.add_argument('--init_steps', default=10000, type=int)
@@ -259,8 +259,7 @@ def run_manual(args):
 
         step += 1
 
-    # with open('images/images_04/data.json', 'w') as f:
-    #     json.dump(poses, f, indent=4)
+
 
     env.close() 
     gui_process.join()
@@ -366,8 +365,6 @@ def run_policy(args):
 
 if __name__ == "__main__":
     args = parse_args()
-    if args.run_manual:
-        run_manual(args)
-    else:
-        print("Running Policy")
-        run_policy(args)
+
+    print("Running Policy")
+    run_policy(args)
