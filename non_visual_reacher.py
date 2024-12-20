@@ -28,32 +28,52 @@ class FrankaPandaEnv(gym.Env):
         self._arm_ctrlrange_max = self.model.actuator_ctrlrange[:, 1] 
         self.view = self._render_env(not manual_mode) if render else None
         self.renderer = mujoco.Renderer(self.model, height=300, width=300)
-        
+        self.last_action = np.zeros(shape=(self.model.nu,))
     def reset(self):
         default_kf = self.model.keyframe("default")
         self.data.qpos = default_kf.qpos.copy()
         self.data.ctrl = default_kf.ctrl.copy()
+        self.data.qpos[0] = np.random.uniform(-0.3, 0.3)
+        self.data.qpos[4] = np.random.uniform(-0.3, 0.3)
         ## Change Target Position
-        # self.model.site_pos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'spherical_site')] = [ np.random.uniform(0.7, 0.8),
-        #                                                                                                   np.random.uniform(-0.2, 0.2),
-        #                                                                                                   np.random.uniform(0.2, 0.6)]
+        self.model.site_pos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'spherical_site')] = [ np.random.uniform(0.7, 0.8),
+                                                                                                          np.random.uniform(-0.2, 0.2),
+                                                                                                          np.random.uniform(0.2, 0.6)]
 
-        self.model.site_pos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'spherical_site')]  = [0.72667744, 0.16379048, 0.20914678] # Keep target stationary for now
+        # self.model.site_pos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'spherical_site')]  = [0.72667744, 0.16379048, 0.20914678] # Keep target stationary for now
         mujoco.mj_forward(self.model, self.data)
         self._sync_view()
         return self._get_obs()
     
-    def step(self, action):
-        action = np.clip(action, -1.0, 1.0) 
 
-        action = (((action + 1) * 0.5) * ARM_VEL_LIMITS * 2) - ARM_VEL_LIMITS
-        action = action * self._dt
+    def _calc_displacement(self, v_1, v_2, epsilon=0.01):
+        k = 2 / self._dt * np.log(1/epsilon - 1)
+        if v_1 > v_2:
+            # going from vmax to vmin
+            vmin = v_2
+            vmax = v_1
+            displacement = vmin * self._dt + (vmax - vmin)/k * np.log((1 + np.exp(-k * self._dt / 2))/(1 + np.exp(k * self._dt / 2)))
+
+        else:
+            # going from vmin to vmax
+            vmin = v_1
+            vmax = v_2
+            displacement = vmin * self._dt + (vmax - vmin)/k * np.log((1 + np.exp(k * self._dt / 2))/(1 + np.exp(-k * self._dt / 2)))
+        return displacement
+    
+    def step(self, action):
+
+        # action = action * self._dt
+        action = np.clip(action, -ARM_VEL_LIMITS, ARM_VEL_LIMITS)
+        action = np.array([self._calc_displacement(v1, v2) for v1, v2 in zip(self.last_action, action)])
+        self.last_action = action
         # action *= 0.4 ## NO NEED FOR SCALING
         
         new_qpos = self._last_qpos[:8] + action
         clipped_new_qpos = np.clip(new_qpos, self._arm_ctrlrange_min, self._arm_ctrlrange_max)
         
         self.data.ctrl[:] = clipped_new_qpos
+        # self.data.qvel[:8] = action
         mujoco.mj_step(self.model, self.data, self._frame_skip)
 
         obs = self._get_obs()
@@ -184,10 +204,12 @@ def test_env():
         # pass
         action = env.action_space.sample()
         obs, reward, done, info = env.step(action)
-        time.sleep(0.2)
+        done = True
+        # time.sleep(0.1)
         if done:
             print(obs, reward, done)
             _ = env.reset()
+            done = False
             
         
 def run_manual():

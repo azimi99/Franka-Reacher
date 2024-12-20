@@ -38,7 +38,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     # environment
     parser.add_argument('--name', default='rl_chemist', type=str)
-    parser.add_argument('--seed', default=9, type=int)
+    parser.add_argument('--seed', default=1, type=int)
     parser.add_argument('--mode', default='prop', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
     
@@ -52,7 +52,7 @@ def parse_args():
     
     # train
     parser.add_argument('--init_steps', default=10000, type=int)
-    parser.add_argument('--env_steps', default=5_000_000, type=int)
+    parser.add_argument('--env_steps', default=2_000_000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=True, action='store_true')
     parser.add_argument('--apply_rad', default=True, action='store_true')
