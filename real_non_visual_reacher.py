@@ -23,6 +23,7 @@ from matplotlib import pyplot as plt
 from matplotlib import animation
 import time
 import logging
+import cv2
 
 from franka_interface import ArmInterface, RobotEnable, GripperInterface
 # ids camera lib for use of IDS ueye cameras.
@@ -35,14 +36,17 @@ from gymnasium.spaces import Box as GymBox
 
 import mujoco
 import mujoco.viewer
+
 ARM_VEL_LIMITS = np.array([2.61799, 2.61799, 2.61799, 2.61799, 3.14159, 3.14159, 3.14159, 0])
+
+
 
 class FrankaPandaEnv(gym.Env):
     # pass
     """
     Gym env for the real franka robot. Set up to perform the placement of a peg that starts in the robots hand into a slot
     """
-    def __init__(self, dt=0.04, episode_length=8, camera_index=0, seed=9, size_tol=0.45, render=False):
+    def __init__(self, dt=0.04, episode_length=8, camera_index=0, seed=9, size_tol=0.45, render=False, model_path="env.xml"):
         np.random.seed(seed)
         self.DT= dt
         self.dt = dt
@@ -108,31 +112,12 @@ class FrankaPandaEnv(gym.Env):
         #     )
         # )
         ## Parallel real-time rendering of the virtual environment
-        model_path = "env.xml"
         self.model = mujoco.MjModel.from_xml_path(model_path)
-        self.data = mujoco.MjData(self.model)
-
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(self.model.nu,), dtype=np.float32)
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(3 + 3 + self.model.nq + self.model.nv,), dtype=np.float32)
 
         self.total_timesteps = 0
 
-
-        self.view = self._render_env() if render else None
-
-        self.renderer = mujoco.Renderer(self.model, height=400, width=500)
-
-    def _render_env(self, disable_panels=True):
-        '''
-            This function renders a 1 of 1 replica mujoco environment
-            of the real franka environment
-        '''
-        return mujoco.viewer.launch_passive(self.model, self.data, show_left_ui= not disable_panels, show_right_ui=not disable_panels)
-    
-    def _sync_view(self):
-        if self.view and self.view.is_running():
-            with self.view.lock():
-                self.view.sync()
 
     def _reset_stats(self):
         self.reward_sum = 0.0
@@ -195,29 +180,34 @@ class FrankaPandaEnv(gym.Env):
         self.out_of_boundary_flag = False
 
 
-        reset_pose = dict(zip(self.joint_names, [np.random.randint(-10, 10) / 100, 0, 0, -1.6, 0, 1.6, 0.8]))
-
-        smoothly_move_to_position_vel(self.robot, self.robot_status, reset_pose, MAX_JOINT_VELs=1.3)
+        reset_pose = dict(zip(self.joint_names, [np.random.randint(-10, 10) / 100, -0.1, 0, -0.6, 0, 1.6, 0.8]))
         print(reset_pose)
+        smoothly_move_to_position_vel(self.robot, self.robot_status, reset_pose, MAX_JOINT_VELs=1.3)
+        # print(reset_pose)
 
 
         ## TODO: Update this
         reset_pose = dict(zip(self.joint_names, self.return_point))
-        reset_pose['panda_joint4'] = np.random.uniform(-1.8, -1.9)
-        reset_pose['panda_joint6'] = np.random.uniform(1.75, 1.8)
+
+        ## RANDOMIZE START POSITION -- SKIP JOINT 5 (SINCE IT MESSES WITH CAMERA ORIENTATION)
+        reset_pose['panda_joint1'] = np.random.uniform(-0.3, 0.3)
+        reset_pose['panda_joint5'] = np.random.uniform(-0.3, 0.3)
+        # reset_pose['panda_joint7'] = np.random.uniform(-0.1, 0.1)
+
 
         smoothly_move_to_position_vel(self.robot, self.robot_status, reset_pose ,MAX_JOINT_VELs=1.3)
         # print("here", self.robot.endpoint_pose()["orientation"])
+        print(reset_pose)
 
         # stop the robot
         self.apply_joint_vel(np.zeros((7,)))
 
         # get the observation
         obs_robot = self.get_state()
-        self.data.qpos[:7] = obs_robot["joints"].copy()
-        self.data.qvel[:7] = obs_robot['joint_vels'].copy()
+        qpos = obs_robot["joints"].copy()
+        qvel = obs_robot['joint_vels'].copy()
 
-        obs = self._get_obs(self.data.qpos, self.data.qvel)
+        obs = self._get_obs(qpos, qvel)
 
         self.time_steps = 0
 
@@ -228,11 +218,6 @@ class FrankaPandaEnv(gym.Env):
 
         self._reset_stats()
 
-        ## Sync with simulator
-        self.data.qpos[:7] = obs_robot["joints"].copy()
-        # self.data.ctrl = default_kf.ctrl.copy()
-        mujoco.mj_forward(self.model, self.data)
-        self._sync_view()
         
         return obs.copy()
 
@@ -322,11 +307,9 @@ class FrankaPandaEnv(gym.Env):
         
         # limit joint action
         action = action.reshape(-1)
-        action = np.clip(action, -0.3, 0.3) 
+        action = np.clip(action, -1*ARM_VEL_LIMITS, ARM_VEL_LIMITS)
+        # action = (((action + 1) * 0.5) * ARM_VEL_LIMITS * 2) - ARM_VEL_LIMITS
 
-        action = (((action + 1) * 0.5) * ARM_VEL_LIMITS * 2) - ARM_VEL_LIMITS
-        action = action * self.dt
-        # action *= 0.4
         # convert joint velocities to pose velocities
         pose_action = np.matmul(self.get_robot_jacobian(), action[:7])
 
@@ -373,13 +356,11 @@ class FrankaPandaEnv(gym.Env):
         self.time_steps += 1
 
         ## Sync with simulator
-        self.data.qpos[:7] = observation_robot["joints"].copy()
-        self.data.qvel[:7] = observation_robot["joint_vels"].copy()
-        mujoco.mj_forward(self.model, self.data)
-        self._sync_view()
-        
+        qpos = observation_robot["joints"].copy()
+        qvel = observation_robot["joint_vels"].copy()
+
         # construct the state
-        obs = self._get_obs(self.data.qpos, self.data.qvel)
+        obs = self._get_obs(qpos, qvel)
         prop = obs.copy()
         done = 0
         info = {}
@@ -394,18 +375,17 @@ class FrankaPandaEnv(gym.Env):
 
         reward = self._compute_reward(self._compute_distance(observation_robot["joints"]), action)
         info = self.monitor(reward, done, info)
-            
+
         return  prop, reward, done, info
 
     def _get_obs(self, joint_pos, joint_vels):
 
         robotic_arm_pointer = self._get_end_effector_pos(joint_angles=joint_pos)
-        target = self.data.site_xpos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'spherical_site')]
+        target = np.array([0.7, 0.2, 0.3])
         return np.concatenate([target, target - robotic_arm_pointer, joint_pos, joint_vels])
 
     def _compute_reward(self, distance, action):
         return -distance - np.linalg.norm(action)
-
 
 
     def handle_joint_angle_in_bound(self, action):
@@ -495,6 +475,8 @@ class FrankaPandaEnv(gym.Env):
 
     def close(self):
         # stop the robot
+        cv2.destroyAllWindows()
+
         self.apply_joint_vel(np.zeros((7,)))
     
     def exit_handler(self,signum):
@@ -516,7 +498,7 @@ class FrankaPandaEnv(gym.Env):
 
     def _compute_distance(self, joint_angles):
         robotic_arm_pointer = self._get_end_effector_pos(joint_angles)
-        target = self.data.site_xpos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'spherical_site')]
+        target = np.array([0.7, 0.2, 0.3])
         return np.linalg.norm(target - robotic_arm_pointer)
     
     def _get_tf_mat(self, i, dh):
