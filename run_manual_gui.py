@@ -132,7 +132,7 @@ def visualize_plot(plot_sm_name):
     ax.set_ylim(-1, 1)
     target_plot, = ax.plot([], [], marker='*', markersize=10, color='b', label='Target')
     end_effector_plot, = ax.plot([], [], marker='o', markersize=10, color='r', label='End Effector')
-    cam_capture = cv2.VideoCapture(0)
+    # cam_capture = cv2.VideoCapture(0)
     # height 480, width 1280
     fourcc = cv2.VideoWriter_fourcc(*'mp4v') 
     video_writer = cv2.VideoWriter("manual_capture.mp4", fourcc, 30, (1280, 480))
@@ -154,24 +154,26 @@ def visualize_plot(plot_sm_name):
         # Convert the RGB image to BGR (OpenCV format)
         img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
         
-        ret, frame = cam_capture.read()
-        if not ret:
-            continue
-        height = min(img.shape[0], frame.shape[0])
-        img1_resized = cv2.resize(img, (int(img.shape[1] * height / img.shape[0]), height))
-        img2_resized = cv2.resize(frame, (int(frame.shape[1] * height / frame.shape[0]), height))
+        # ret, frame = cam_capture.read()
+        # if not ret:
+        #     continue
+        # height = min(img.shape[0], frame.shape[0])
+        # img1_resized = cv2.resize(img, (int(img.shape[1] * height / img.shape[0]), height))
+        # img2_resized = cv2.resize(frame, (int(frame.shape[1] * height / frame.shape[0]), height))
 
         # Horizontally stack the images
-        combined_img = np.hstack((img1_resized, img2_resized))
-        print(combined_img.shape)
+        # combined_img = np.hstack((img1_resized, img2_resized))
+        # print(combined_img.shape)
         #Show the plot in the OpenCV window
-        cv2.imshow("Real-time Plot", combined_img)
-        video_writer.write(combined_img)
+        # cv2.imshow("Real-time Plot", combined_img)
+
+        cv2.imshow("Visualization Plot", img)
+        video_writer.write(img)
         key = cv2.waitKey(1) & 0xFF
         if key == 27:  # 27 is the ASCII code for the 'ESC' key
             print("Escape key pressed. Closing the window.")
             break  # Exit the loop and close the window
-    cam_capture.release()
+    # cam_capture.release()
     video_writer.release()
     cv2.destroyAllWindows()
 

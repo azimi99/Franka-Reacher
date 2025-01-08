@@ -8,7 +8,7 @@ os.environ['XLA_PYTHON_CLIENT_PREALLOCATE']='false'
 
 from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, WrappedEnv
 from jsac.helpers.logger import Logger
-from jsac.envs.rl_chemist.env import RLChemistEnv
+# from jsac.envs.rl_chemist.env import RLChemistEnv
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
 from utils import combine_images, image_render
 
@@ -55,19 +55,22 @@ def parse_args():
     parser.add_argument('--env_steps', default=2_000_000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=True, action='store_true')
-    parser.add_argument('--apply_rad', default=True, action='store_true')
-    parser.add_argument('--rad_offset', default=0.01, type=float)
+    # parser.add_argument('--apply_rad', default=True, action='store_true')
+    # parser.add_argument('--rad_offset', default=0.01, type=float)
+    parser.add_argument('--global_norm', default=1.0, type=float)
     
     # critic
     parser.add_argument('--critic_lr', default=3e-5, type=float)
+    parser.add_argument('--num_critic_networks', default=5, type=int)
+    parser.add_argument('--num_critic_updates', default=1, type=int)
     parser.add_argument('--critic_tau', default=0.01, type=float)
-    parser.add_argument('--clip_global_norm', default=1.0, type=float)
+
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
     # actor
     parser.add_argument('--actor_lr', default=3e-4, type=float)
     parser.add_argument('--actor_update_freq', default=1, type=int)
-    # parser.add_argument('--actor_sync_freq', default=8, type=int)
+    parser.add_argument('--actor_sync_freq', default=8, type=int)
     
     # encoder
     parser.add_argument('--spatial_softmax', default=True, action='store_true')
@@ -86,7 +89,7 @@ def parse_args():
     parser.add_argument('--save_wandb', default=False, action='store_true')
 
     parser.add_argument('--save_model', default=True, action='store_true')
-    parser.add_argument('--save_model_freq', default=100_000, type=int)
+    parser.add_argument('--save_model_freq', default=500_000, type=int)
     parser.add_argument('--load_model', default=-1, type=int)
     parser.add_argument('--start_step', default=0, type=int)
     parser.add_argument('--start_episode', default=0, type=int)
@@ -168,15 +171,12 @@ def run_training(args):
         # truncate = env.total_steps % max_episode_length == 0
         # done = done or truncate
         t3 = time.time()
-        if not done:
-            mask = 1.0
-        else:
-            mask = 0.0
+        mask = 1.0 if not done or 'truncated' in info else 0.0
         agent.add(obs, action, reward, next_obs, mask, first_step)
         obs = next_obs
         first_step = False
         
-        if done:
+        if done or 'truncated' in info:
             
             obs = env.reset()
             info['tag'] = 'train'
@@ -262,7 +262,7 @@ def run_policy(args):
     agent = SACRADAgent(vars(args))
     obs = env.reset()
     returns = []
-    cap = cv2.VideoCapture(0)
+    # cap = cv2.VideoCapture(0)
     # _, frame = cap.read()
     image = image_render(env)
 
@@ -274,8 +274,7 @@ def run_policy(args):
     height, width, _ = image_bgr.shape
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Codec for .mp4 files
     video_writer = cv2.VideoWriter("results/sim/run.mp4", fourcc, fps=30, frameSize=(width, height))
-    if not cap.isOpened():
-        return
+
     for _ in range(1):
         done = False
         rewards = []
@@ -309,7 +308,6 @@ def run_policy(args):
     np.savetxt("results/sim_episodic_returns.txt", returns)
     cv2.destroyAllWindows()
     video_writer.release()
-    cap.release()
     env.close()
     print("Policy Run Complete")
     exit(0)     

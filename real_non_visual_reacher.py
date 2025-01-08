@@ -379,7 +379,8 @@ class FrankaPandaEnv(gym.Env):
         return  prop, reward, done, info
 
     def _get_obs(self, joint_pos, joint_vels):
-
+        joint_pos = np.append(joint_pos, [0.04, 0.04])
+        joint_vels = np.append(joint_vels, [0.0, 0.0])
         robotic_arm_pointer = self._get_end_effector_pos(joint_angles=joint_pos)
         target = np.array([0.7, 0.2, 0.3])
         return np.concatenate([target, target - robotic_arm_pointer, joint_pos, joint_vels])

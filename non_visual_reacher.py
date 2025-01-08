@@ -29,7 +29,10 @@ class FrankaPandaEnv(gym.Env):
         self.view = self._render_env(not manual_mode) if render else None
         self.renderer = mujoco.Renderer(self.model, height=300, width=300)
         self.last_action = np.zeros(shape=(self.model.nu,))
+        self.num_step = 0
+
     def reset(self):
+        self.num_step = 0
         default_kf = self.model.keyframe("default")
         self.data.qpos = default_kf.qpos.copy()
         self.data.ctrl = default_kf.ctrl.copy()
@@ -62,7 +65,7 @@ class FrankaPandaEnv(gym.Env):
         return displacement
     
     def step(self, action):
-
+        self.num_step += 1
         # action = action * self._dt
         action = np.clip(action, -ARM_VEL_LIMITS, ARM_VEL_LIMITS)
         action = np.array([self._calc_displacement(v1, v2) for v1, v2 in zip(self.last_action, action)])
@@ -80,6 +83,8 @@ class FrankaPandaEnv(gym.Env):
         reward = self._compute_reward(action)
         done = self._is_done()
         info = {}
+        if self.num_step == 500:
+            info['truncated'] = True
         self._sync_view()
         self._last_qpos = self.data.qpos.copy()
         return obs, reward, done, info

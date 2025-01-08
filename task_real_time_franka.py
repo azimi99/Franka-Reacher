@@ -5,10 +5,11 @@ from multiprocessing import shared_memory, Process, Queue, Lock
 
 from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, WrappedEnv
 from jsac.helpers.logger import Logger
-from jsac.envs.rl_chemist.env import RLChemistEnv
+# from jsac.envs.rl_chemist.env import RLChemistEnv
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
 
 import cv2
+from matplotlib import pyplot as plt
 
 
 np.set_printoptions(precision=3, linewidth=10000, suppress=True)
@@ -39,7 +40,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     # environment
     parser.add_argument('--name', default='rl_chemist', type=str)
-    parser.add_argument('--seed', default=9, type=int)
+    parser.add_argument('--seed', default=1, type=int)
     parser.add_argument('--mode', default='prop', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
     
@@ -49,26 +50,29 @@ def parse_args():
     parser.add_argument('--image_history', default=3, type=int)
 
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=1000000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=1_000_000, type=int)
     
     # train
     parser.add_argument('--init_steps', default=10000, type=int)
-    parser.add_argument('--env_steps', default=5_000_000, type=int)
+    parser.add_argument('--env_steps', default=2_000_000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=True, action='store_true')
-    parser.add_argument('--apply_rad', default=True, action='store_true')
-    parser.add_argument('--rad_offset', default=0.01, type=float)
+    # parser.add_argument('--apply_rad', default=True, action='store_true')
+    # parser.add_argument('--rad_offset', default=0.01, type=float)
+    parser.add_argument('--global_norm', default=1.0, type=float)
     
     # critic
     parser.add_argument('--critic_lr', default=3e-5, type=float)
+    parser.add_argument('--num_critic_networks', default=5, type=int)
+    parser.add_argument('--num_critic_updates', default=1, type=int)
     parser.add_argument('--critic_tau', default=0.01, type=float)
-    parser.add_argument('--clip_global_norm', default=1.0, type=float)
+
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
     # actor
     parser.add_argument('--actor_lr', default=3e-4, type=float)
     parser.add_argument('--actor_update_freq', default=1, type=int)
-    # parser.add_argument('--actor_sync_freq', default=8, type=int)
+    parser.add_argument('--actor_sync_freq', default=8, type=int)
     
     # encoder
     parser.add_argument('--spatial_softmax', default=True, action='store_true')
@@ -87,7 +91,7 @@ def parse_args():
     parser.add_argument('--save_wandb', default=False, action='store_true')
 
     parser.add_argument('--save_model', default=True, action='store_true')
-    parser.add_argument('--save_model_freq', default=100_000, type=int)
+    parser.add_argument('--save_model_freq', default=500_000, type=int)
     parser.add_argument('--load_model', default=-1, type=int)
     parser.add_argument('--start_step', default=0, type=int)
     parser.add_argument('--start_episode', default=0, type=int)
@@ -266,7 +270,66 @@ def run_manual(args):
 
     action_sm.close()
 
+
+def visualize_plot(plot_sm_name):
+    fig, ax = plt.subplots()
+
+    plot_sm = shared_memory.SharedMemory(name=plot_sm_name)
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
+    target_plot, = ax.plot([], [], marker='*', markersize=10, color='b', label='Target')
+    end_effector_plot, = ax.plot([], [], marker='o', markersize=10, color='r', label='End Effector')
+    # cam_capture = cv2.VideoCapture(0)
+    # height 480, width 1280
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v') 
+    video_writer = cv2.VideoWriter("manual_capture.mp4", fourcc, 30, (1280, 480))
+    while True:
+        coordinates = np.ndarray((6,), dtype=np.float32, buffer=plot_sm.buf)
+
+        target_x_y = coordinates[:2]
+        end_effector_x_y = coordinates[:3] - coordinates[3:]
+
+        target_plot.set_data([target_x_y[0]], [target_x_y[1]])
+        # Update the position of the end effector
+        end_effector_plot.set_data([end_effector_x_y[0]], [end_effector_x_y[1]])
+        end_effector_plot.set_markersize(5 + np.abs(coordinates[-1])*500)
+        fig.canvas.draw()
+        plt.draw()
+        img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+        img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        
+        # Convert the RGB image to BGR (OpenCV format)
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        
+        # ret, frame = cam_capture.read()
+        # if not ret:
+        #     continue
+        # height = min(img.shape[0], frame.shape[0])
+        # img1_resized = cv2.resize(img, (int(img.shape[1] * height / img.shape[0]), height))
+        # img2_resized = cv2.resize(frame, (int(frame.shape[1] * height / frame.shape[0]), height))
+
+        # Horizontally stack the images
+        # combined_img = np.hstack((img1_resized, img2_resized))
+        # print(combined_img.shape)
+        #Show the plot in the OpenCV window
+        # cv2.imshow("Real-time Plot", combined_img)
+
+        cv2.imshow("Visualization Plot", img)
+        video_writer.write(img)
+        key = cv2.waitKey(1) & 0xFF
+        if key == 27:  # 27 is the ASCII code for the 'ESC' key
+            print("Escape key pressed. Closing the window.")
+            break  # Exit the loop and close the window
+    # cam_capture.release()
+    video_writer.release()
+    cv2.destroyAllWindows()
+
+
 def run_policy(args):
+    plot_sm = shared_memory.SharedMemory(create=True, size=np.dtype(np.float32).itemsize*6)
+    coordinates = np.ndarray((6,), dtype=np.float32, buffer=plot_sm.buf)
+    lock = Lock()
+
     env = FrankaPandaEnv(render=args.render_interactive)
     env = WrappedEnv(env, start_step= args.start_step, 
                      start_episode=args.start_episode, episode_max_steps=1000)
@@ -303,45 +366,51 @@ def run_policy(args):
     set_seed_everywhere(seed=args.seed)
     
     # args.single_image_shape = (args.image_width, args.image_height, 3)
+    # print(args.proprioception_shape)
     args.proprioception_shape = env.observation_space.shape
     args.action_shape = env.action_space.shape
+    print(proprioception_shape)
     args.env_action_space = env.action_space
     args.image_shape = None
     args.net_params = config
     agent = SACRADAgent(vars(args))
     obs = env.reset()
+    print(obs.shape)
+    # exit(0)
     returns = []
 
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        return
-    _, frame = cap.read()
-    image = image_render(env)
+    # cap = cv2.VideoCapture(0)
+    # if not cap.isOpened():
+    #     return
+    # _, frame = cap.read()
+    # image = image_render(env)
 
-    if image is not None:
-        image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)  # Convert from RGB to BGR for OpenCV
+    # if image is not None:
+    #     image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)  # Convert from RGB to BGR for OpenCV
 
-    final_image = combine_images(image_bgr, frame)
-    height, width, _ = final_image.shape
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Codec for .mp4 files
-    video_writer = cv2.VideoWriter("results/sim2real/run.mp4", fourcc, fps=30, frameSize=(width, height))
-
-    for _ in range(1):
+    # final_image = combine_images(image_bgr, frame)
+    # height, width, _ = final_image.shape
+    # fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Codec for .mp4 files
+    # video_writer = cv2.VideoWriter("results/sim2real/run.mp4", fourcc, fps=30, frameSize=(width, height))
+    plot_process = Process(target=visualize_plot, args=(plot_sm.name,))
+    plot_process.start()
+    for _ in range(3):
         done = False
         rewards = []
         while not done:
             action = agent.sample_actions(obs, deterministic=True)
+            coordinates[:6] = obs[:6]
             next_obs, reward, done, info = env.step(action)
 
-            image = image_render(env)
+            # image = image_render(env)
 
-            if image is not None:
-                image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)  # Convert from RGB to BGR for OpenCV
+            # if image is not None:
+            #     image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)  # Convert from RGB to BGR for OpenCV
 
-            _, frame = cap.read()
-            final_image = combine_images(image_bgr, frame)
-            video_writer.write(final_image)
-            cv2.imshow('Sim2Real Visualization', final_image)
+            # _, frame = cap.read()
+            # final_image = combine_images(image_bgr, frame)
+            # video_writer.write(final_image)
+            # cv2.imshow('Sim2Real Visualization', final_image)
 
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
@@ -352,11 +421,14 @@ def run_policy(args):
                 print("Episode Done")
             rewards.append(reward)
         returns.append(sum(rewards))
-    np.savetxt("results/real_episodic_returns.txt", returns)
+    # np.savetxt("results/real_episodic_returns.txt", returns)
     cv2.destroyAllWindows()
-    video_writer.release()
-    cap.release()
+    # video_writer.release()
+    # cap.release()
     env.close()
+    # plot_process.join()
+    # plot_sm.close()
+    plt.close()
     print("Policy run complete")
     
             
