@@ -282,7 +282,7 @@ def visualize_plot(plot_sm_name):
     # cam_capture = cv2.VideoCapture(0)
     # height 480, width 1280
     fourcc = cv2.VideoWriter_fourcc(*'mp4v') 
-    video_writer = cv2.VideoWriter("manual_capture.mp4", fourcc, 30, (1280, 480))
+    video_writer = cv2.VideoWriter("manual_capture.mp4", fourcc, 30, (640, 480))
     while True:
         coordinates = np.ndarray((6,), dtype=np.float32, buffer=plot_sm.buf)
 
@@ -300,7 +300,7 @@ def visualize_plot(plot_sm_name):
         
         # Convert the RGB image to BGR (OpenCV format)
         img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-        
+        print(img.shape)
         # ret, frame = cam_capture.read()
         # if not ret:
         #     continue
@@ -319,11 +319,12 @@ def visualize_plot(plot_sm_name):
         key = cv2.waitKey(1) & 0xFF
         if key == 27:  # 27 is the ASCII code for the 'ESC' key
             print("Escape key pressed. Closing the window.")
+            video_writer.release()
+            cv2.destroyAllWindows()
             break  # Exit the loop and close the window
-    # cam_capture.release()
-    video_writer.release()
-    cv2.destroyAllWindows()
+            # cam_capture.release()
 
+    print("Visualization complete")
 
 def run_policy(args):
     plot_sm = shared_memory.SharedMemory(create=True, size=np.dtype(np.float32).itemsize*6)
@@ -426,8 +427,8 @@ def run_policy(args):
     # video_writer.release()
     # cap.release()
     env.close()
-    # plot_process.join()
-    # plot_sm.close()
+    plot_process.join()
+    plot_sm.close()
     plt.close()
     print("Policy run complete")
     

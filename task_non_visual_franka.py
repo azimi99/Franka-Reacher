@@ -52,7 +52,7 @@ def parse_args():
     
     # train
     parser.add_argument('--init_steps', default=10000, type=int)
-    parser.add_argument('--env_steps', default=2_000_000, type=int)
+    parser.add_argument('--env_steps', default=500_000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=True, action='store_true')
     # parser.add_argument('--apply_rad', default=True, action='store_true')
@@ -89,7 +89,7 @@ def parse_args():
     parser.add_argument('--save_wandb', default=False, action='store_true')
 
     parser.add_argument('--save_model', default=True, action='store_true')
-    parser.add_argument('--save_model_freq', default=500_000, type=int)
+    parser.add_argument('--save_model_freq', default=250_000, type=int)
     parser.add_argument('--load_model', default=-1, type=int)
     parser.add_argument('--start_step', default=0, type=int)
     parser.add_argument('--start_episode', default=0, type=int)

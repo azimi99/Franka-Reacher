@@ -39,8 +39,8 @@ class FrankaPandaEnv(gym.Env):
         self.data.qpos[0] = np.random.uniform(-0.3, 0.3)
         self.data.qpos[4] = np.random.uniform(-0.3, 0.3)
         ## Change Target Position
-        self.model.site_pos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'spherical_site')] = [ np.random.uniform(0.7, 0.8),
-                                                                                                          np.random.uniform(-0.2, 0.2),
+        self.model.site_pos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'spherical_site')] = [ np.random.uniform(0.6, 0.7),
+                                                                                                          np.random.uniform(-0.3, 0.3),
                                                                                                           np.random.uniform(0.2, 0.6)]
 
         # self.model.site_pos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'spherical_site')]  = [0.72667744, 0.16379048, 0.20914678] # Keep target stationary for now
@@ -66,9 +66,10 @@ class FrankaPandaEnv(gym.Env):
     
     def step(self, action):
         self.num_step += 1
-        # action = action * self._dt
+
         action = np.clip(action, -ARM_VEL_LIMITS, ARM_VEL_LIMITS)
-        action = np.array([self._calc_displacement(v1, v2) for v1, v2 in zip(self.last_action, action)])
+        # action = np.array([self._calc_displacement(v1, v2) for v1, v2 in zip(self.last_action, action)])
+        action = action * self._dt
         self.last_action = action
         # action *= 0.4 ## NO NEED FOR SCALING
         
@@ -82,9 +83,7 @@ class FrankaPandaEnv(gym.Env):
         obs = self._get_obs()
         reward = self._compute_reward(action)
         done = self._is_done()
-        info = {}
-        if self.num_step == 500:
-            info['truncated'] = True
+        info = {'truncated': self.num_step == 500}
         self._sync_view()
         self._last_qpos = self.data.qpos.copy()
         return obs, reward, done, info
@@ -227,17 +226,41 @@ def run_manual():
         env._sync_view()
 
 
+def record_trajectories():
+    env = FrankaPandaEnv(render=True)
+    actions_to_send = np.linspace(-1, 1, 500)
+    action = np.zeros(env.action_space.shape[0])
+    joint_ind = 7
+
+    for i_ep in range(10):
+        obs = env.reset()
+        done, ret, step = False, 0, 0
+        while not done:
+            # action[joint_ind] = actions_to_send[step]
+            action = env.action_space.sample()
+            next_obs, reward, done, info = env.step(action)
+            step += 1
+            ret += reward
+            done = done or info['truncated']
+            obs = next_obs
+        print(f"Episode {i_ep+1} ended with return {ret} in {step} steps")
+
+
+
+
+
 if __name__ == "__main__":
 # Create an instance of the environment and test it
     
     parser = argparse.ArgumentParser(description="Update the position of a site in MuJoCo simulation.", argument_default=False)
-    parser.add_argument('--manual', type=bool, required=False, help="Specify rendering in manual mode or not")
+    parser.add_argument('--manual', action='store_true', help="Specify rendering in manual mode or not")
     args = parser.parse_args()
 
     if args.manual == True:
         run_manual()
     else:
-        test_env()
+        # test_env()
+        record_trajectories()
             
     
 

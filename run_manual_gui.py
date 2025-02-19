@@ -73,7 +73,7 @@ class JointControlApp(tk.Tk):
         self.action[joint] = change
 
     def on_press_minus(self, joint):
-        self.update_joint_position(joint, -0.3)
+        self.update_joint_position(joint, -1)
 
     def on_release_minus(self, joint):
         self.update_joint_position(joint, 0)
@@ -83,7 +83,7 @@ class JointControlApp(tk.Tk):
         self.reset_sm.buf[0] = True
 
     def on_press_plus(self, joint):
-        self.update_joint_position(joint, 0.3)
+        self.update_joint_position(joint, 1)
 
     def on_release_plus(self, joint):
         self.update_joint_position(joint, 0)
@@ -209,8 +209,8 @@ def run_manual():
             time.sleep(0.5)
             reset_sm.buf[0] = False
         a = action.copy()
-        if a[0] < -1.0:
-            break
+        # if a[0] < -1.0:
+        #     break
 
         if a[7] > 1.0:
             print('Openning gripper')
@@ -230,6 +230,10 @@ def run_manual():
         
 
         step += 1
+
+        # time.sleep(0.04)
+        ## What is the actuation rate?
+        ## Safety limit file
 
 
 

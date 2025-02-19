@@ -39,10 +39,11 @@ import mujoco.viewer
 
 ARM_VEL_LIMITS = np.array([2.61799, 2.61799, 2.61799, 2.61799, 3.14159, 3.14159, 3.14159, 0])
 
+Q_MAX = np.array([2.8973, 1.7628, 2.8973, 3.0718, 2.8973, 3.7525, 2.8973, 0])
 
 
 class FrankaPandaEnv(gym.Env):
-    # pass
+
     """
     Gym env for the real franka robot. Set up to perform the placement of a peg that starts in the robots hand into a slot
     """
@@ -160,8 +161,10 @@ class FrankaPandaEnv(gym.Env):
 
         # set imaginary reacher-3d target
         # [0.72667744 0.16379048 0.20914678]
-        self.model.site_pos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'spherical_site')] =\
-              [0.72667744, 0.16379048, 0.20914678] # Keep target stationary for now
+        self.target =\
+              [ np.random.uniform(0.6, 0.7),
+                np.random.uniform(-0.2, 0.2),
+                np.random.uniform(0.2, 0.6)] 
 
         # # random pose
         # random_reset_pose = [random_val_continous(joint_range) for joint_range in self.angle_safety_bound]
@@ -297,8 +300,28 @@ class FrankaPandaEnv(gym.Env):
 
     def apply_joint_vel(self, joint_vels):
         joint_vels = dict(zip(self.joint_names, joint_vels))
+
+        
         self.robot.set_joint_velocities(joint_vels)        
         return True
+    
+    def apply_joint_displacement(self, displacement):
+        observation_robot = self.get_state()
+
+        ## Sync with simulator
+        qpos = observation_robot["joints"].copy()
+
+
+
+        # print(displacement.shape)
+
+        new_qpos = qpos + displacement[:7]
+                ## clip to within range
+        new_qpos = np.clip(-Q_MAX[:7], Q_MAX[:7], new_qpos[:7])
+        joint_pos = dict(zip(self.joint_names, new_qpos[:7]))
+        # print(qpos.shape)
+        # print(displacement.shape)
+        self.robot.set_joint_positions(joint_pos)
 
     def step(self, action, pose_vel_limit=0.3):
         self.ep_time += self.dt
@@ -335,8 +358,9 @@ class FrankaPandaEnv(gym.Env):
             action = self.get_joint_vel_from_pos_vel(d_X)
 
         action = self.handle_joint_angle_in_bound(action)
-    
-        self.apply_joint_vel(action)
+
+        # self.apply_joint_vel(action)
+        self.apply_joint_displacement(action * self.dt/2)
         self.prev_action = action
 
 
@@ -344,8 +368,6 @@ class FrankaPandaEnv(gym.Env):
 
         done = False
 
-
-        
         delay = (self.ep_time + self.reset_time) - time.time()
         if delay > 0:
             time.sleep(np.float64(delay))
@@ -382,8 +404,8 @@ class FrankaPandaEnv(gym.Env):
         joint_pos = np.append(joint_pos, [0.04, 0.04])
         joint_vels = np.append(joint_vels, [0.0, 0.0])
         robotic_arm_pointer = self._get_end_effector_pos(joint_angles=joint_pos)
-        target = np.array([0.7, 0.2, 0.3])
-        return np.concatenate([target, target - robotic_arm_pointer, joint_pos, joint_vels])
+        
+        return np.concatenate([self.target, self.target - robotic_arm_pointer, joint_pos, joint_vels])
 
     def _compute_reward(self, distance, action):
         return -distance - np.linalg.norm(action)
